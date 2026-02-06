@@ -49,7 +49,6 @@ const MILESTONES: Milestone[] = [
   { key: "ready", label: "Ready", codes: ["READY"] },
   { key: "docs", label: "Docs Received", codes: ["DOCS_RECEIVED"] },
   { key: "cargo", label: "Cargo Received", codes: ["CARGO_RECEIVED"] },
-  // planned vs actual: ETD is planned, ATD is real progress
   { key: "departed", label: "Departed", codes: ["ATD"] },
   { key: "discharged", label: "Discharged", codes: ["DISCHARGED"] },
   { key: "customs", label: "Customs Released", codes: ["CUSTOMS_RELEASED"] },
@@ -149,36 +148,48 @@ export default function ShipmentDetailPage() {
   const [shipment, setShipment] = useState<Shipment | null>(null);
   const [events, setEvents] = useState<EventRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
   useEffect(() => {
     (async () => {
-      const { data: sessionData } = await supabase.auth.getSession();
-      if (!sessionData.session) {
-        window.location.href = "/login";
-        return;
+      try {
+        // Get session token
+        const { data } = await supabase.auth.getSession();
+        const session = data.session;
+
+        if (!session) {
+          window.location.href = "/login";
+          return;
+        }
+
+        // Call API with Bearer token
+        const res = await fetch(`/api/shipments/${encodeURIComponent(shipmentId)}`, {
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+          },
+        });
+
+        if (res.status === 401) {
+          window.location.href = "/login";
+          return;
+        }
+
+        const json = await res.json();
+
+        if (!res.ok) {
+          setError(json.error || "Unable to load shipment");
+          setLoading(false);
+          return;
+        }
+
+        setShipment(json.shipment);
+        setEvents(json.events ?? []);
+      } catch (err) {
+        console.error("Failed to load shipment", err);
+        setError("Failed to load shipment");
+      } finally {
+        setLoading(false);
       }
-
-      const { data: sData, error: sErr } = await supabase
-        .from("shipments")
-        .select(
-          "shipment_id, hawb, mawb, po_number, customer_reference, origin, destination, current_status, eta_updated, last_event_time"
-        )
-        .eq("shipment_id", shipmentId)
-        .maybeSingle();
-
-      const { data: eData, error: eErr } = await supabase
-        .from("events")
-        .select("event_time, event_code, notes, location, source_column")
-        .eq("shipment_id", shipmentId)
-        .order("event_time", { ascending: false });
-
-      setLoading(false);
-
-      if (sErr) console.error("Shipment error:", sErr.message, sErr.code);
-      if (eErr) console.error("Events error:", eErr.message, eErr.code);
-
-      if (sData) setShipment(sData as Shipment);
-      setEvents((eData ?? []) as EventRow[]);
     })();
   }, [shipmentId]);
 
@@ -212,6 +223,8 @@ export default function ShipmentDetailPage() {
       <div className="rounded-2xl border border-[var(--wpl-border)] bg-white p-5 shadow-sm">
         {loading ? (
           <div className="text-[var(--wpl-gray)]">Loading shipment…</div>
+        ) : error ? (
+          <div className="text-[var(--wpl-red)]">{error}</div>
         ) : !shipment ? (
           <div className="text-[var(--wpl-red)]">Shipment not found.</div>
         ) : (
