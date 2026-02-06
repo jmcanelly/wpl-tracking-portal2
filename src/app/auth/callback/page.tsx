@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
+import { Suspense } from "react";
 
 function parseHashParams() {
   const hash = window.location.hash?.startsWith("#")
@@ -11,7 +12,7 @@ function parseHashParams() {
   return new URLSearchParams(hash);
 }
 
-export default function AuthCallbackPage() {
+function CallbackHandler() {
   const sp = useSearchParams();
 
   useEffect(() => {
@@ -79,5 +80,17 @@ export default function AuthCallbackPage() {
     <div className="rounded-2xl border border-[var(--wpl-border)] bg-white p-6 shadow-sm">
       Signing you in…
     </div>
+  );
+}
+
+export default function AuthCallbackPage() {
+  return (
+    <Suspense fallback={
+      <div className="rounded-2xl border border-[var(--wpl-border)] bg-white p-6 shadow-sm">
+        Loading…
+      </div>
+    }>
+      <CallbackHandler />
+    </Suspense>
   );
 }
