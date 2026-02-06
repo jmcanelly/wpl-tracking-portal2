@@ -55,14 +55,24 @@ export async function GET(req: Request) {
     return NextResponse.json({ data: [], email: user.email });
   }
 
-  const customerIds = memberships.map((m) => m.customer_id);
+  const customerIds = memberships.map((m) => m.customer_id).filter(Boolean);
 
-  const { data: shipments, error: shipmentError } = await admin
+  if (customerIds.length === 0) {
+    return NextResponse.json({ data: [], email: user.email });
+  }
+
+  // Build a case-insensitive OR query
+  let query = admin
     .from("shipments")
     .select(
       "shipment_id, hawb, mawb, po_number, customer_reference, origin, destination, current_status, eta_updated, last_event_time"
-    )
-    .in("customer_id", customerIds)
+    );
+
+  // Use .or() with multiple .ilike() for case-insensitive matching
+  const orConditions = customerIds.map((id) => `customer_id.ilike.${id}`).join(",");
+  query = query.or(orConditions);
+
+  const { data: shipments, error: shipmentError } = await query
     .order("last_event_time", { ascending: false })
     .limit(300);
 
@@ -70,5 +80,23 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: shipmentError.message }, { status: 500 });
   }
 
-  return NextResponse.json({ data: shipments ?? [], email: user.email });
+  // For each shipment, get the latest event code
+  const shipmentsWithStatus = await Promise.all(
+    (shipments ?? []).map(async (shipment) => {
+      const { data: latestEvent } = await admin
+        .from("events")
+        .select("event_code")
+        .eq("shipment_id", shipment.shipment_id)
+        .order("event_time", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      return {
+        ...shipment,
+        latest_event_code: latestEvent?.event_code || null,
+      };
+    })
+  );
+
+  return NextResponse.json({ data: shipmentsWithStatus, email: user.email });
 }

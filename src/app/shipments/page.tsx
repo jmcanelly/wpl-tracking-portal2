@@ -16,6 +16,7 @@ type Shipment = {
   current_status: string | null;
   eta_updated: string | null;
   last_event_time: string | null;
+  latest_event_code: string | null;
 };
 
 type SortKey =
@@ -53,8 +54,19 @@ type DerivedStatus =
   | "Pre-Departure";
 
 function deriveStatus(s: Shipment): DerivedStatus {
-  const raw = (s.current_status ?? "").trim().toLowerCase();
+  const eventCode = (s.latest_event_code ?? "").toUpperCase().trim();
 
+  // Check event code first (most reliable)
+  if (eventCode.includes("DELIVERED") || eventCode === "DEL") return "Delivered";
+  if (eventCode.includes("CUSTOMS_RELEASED") || eventCode === "CUS" || eventCode.includes("CLEARED")) 
+    return "Customs Released";
+  if (eventCode.includes("DISCHARGED") || eventCode === "DIS") return "Discharged";
+  if (eventCode.includes("ATD") || eventCode.includes("DEPARTED")) return "In Transit";
+  if (eventCode.includes("BOOKED") || eventCode.includes("READY") || eventCode.includes("DOCS_RECEIVED") || eventCode.includes("CARGO_RECEIVED")) 
+    return "Pre-Departure";
+
+  // Fall back to current_status if event code doesn't match
+  const raw = (s.current_status ?? "").trim().toLowerCase();
   if (raw.includes("deliver")) return "Delivered";
   if (raw.includes("custom") && (raw.includes("release") || raw.includes("cleared")))
     return "Customs Released";
@@ -63,6 +75,7 @@ function deriveStatus(s: Shipment): DerivedStatus {
   if (raw.includes("pre") || raw.includes("booked") || raw.includes("ready"))
     return "Pre-Departure";
 
+  // Default
   return "In Transit";
 }
 
